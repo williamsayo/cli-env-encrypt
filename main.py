@@ -2,18 +2,27 @@ import sys
 import getpass
 import logging
 from typing import Literal, TypeAlias
+from dbStore import DB
+from pathlib import Path
 
 CommandType: TypeAlias = Literal["DECRYPT", "ENCRYPT"]
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[{levelname}]: {message}",
+    style="{",
+)
 logger = logging.getLogger(__name__)
+
 
 def getPassword(command: CommandType) -> str:
     if command == "ENCRYPT":
         while True:
-            password = getpass.getpass(f"Enter the password for encrypting: ")
+            password = getpass.getpass("Enter the password for encrypting: ")
             # Ensure the password meets minimum length requirements
             if len(password) < 8:
-                logger.error("Password is too short. Please enter a password with at least 8 characters.")
+                logger.error(
+                    "Password is too short. Please enter a password with at least 8 characters."
+                )
                 continue
             confirm_password = getpass.getpass("Confirm the password: ")
             # Check if the passwords match
@@ -28,21 +37,27 @@ def getPassword(command: CommandType) -> str:
 
     return password
 
-def validateFile(fileName: str, command: CommandType) -> bool:
+
+def validateFile(fileName: str, command: CommandType) -> None:
     fileExtension = fileName.split(".").pop()
-    if command == 'ENCRYPT' and fileExtension == "encrypted":
+    if command == "ENCRYPT" and fileExtension == "encrypted":
         logger.error("File already encrypted.")
     elif command == "DECRYPT" and fileExtension != "encrypted":
-        logger.error("File was not encrypted. Encrypted file has a .encrypted extension")
+        logger.error(
+            "File was not encrypted. Encrypted file has a .encrypted extension"
+        )
     else:
         return
     sys.exit(1)
 
-def main():
-    from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
-    from encryptionHelper import EncryptionHelper
 
-    encryption_helper = EncryptionHelper()
+def main() -> None:
+    from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
+    from encryptionHelper import EncryptionHelper, EncryptionException, EncryptionLogger
+
+    db = DB()
+    encryptionLogger = EncryptionLogger(logger)
+    encryptionHelper = EncryptionHelper(db, encryptionLogger)
     defaultPaassword = "default_password_123"  # Replace with a secure default password or method to retrieve it
 
     descriptionEpilog: str = """
@@ -62,15 +77,17 @@ Examples:
         formatter_class=RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
-    parser.add_argument(
-        "-v", '--version', action='version', version='%(prog)s 1.0'
-    )
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0")
     groupArgs = parser.add_mutually_exclusive_group(required=True)
     parser.add_argument(
         "file", help="File to encrypt/decrypt.", default=".env", type=str, nargs="?"
     )
     parser.add_argument(
-        "-p", '--password', action='store_true', help="Password to use for encryption/decryption.", required=False
+        "-p",
+        "--password",
+        action="store_false",
+        help="Password to use for encryption/decryption.",
+        required=False,
     )
 
     groupArgs.add_argument(
@@ -87,10 +104,10 @@ Examples:
     )
 
     args: Namespace = parser.parse_args()
-    fileName:str = args.file
+    fileName: str = args.file
 
     try:
-        with open(fileName, "r", encoding="utf-8") as envFile:
+        with Path(fileName).open("rb") as envFile:
             envFileContent = envFile.read()
 
         # Check if the file is empty
@@ -102,26 +119,33 @@ Examples:
         if args.encrypt:
             command: CommandType = "ENCRYPT"
             validateFile(fileName, command)
-            encryptionPassword = getPassword(command) if args.password else defaultPaassword
-            key = encryption_helper.generate_key(
-                encryptionPassword, fileName, save_salt=True
+            encryptionPassword = (
+                getPassword(command) if args.password else defaultPaassword
             )
-            encryption_helper.encrypt(fileName, key)
+            encryptionHelper.encrypt(encryptionPassword, fileName)
+
         # Perform decryption based on the provided arguments
         elif args.decrypt:
-            command: CommandType = "DECRYPT"
+            command = "DECRYPT"
             validateFile(fileName, command)
             decryptionPassword = (
                 getPassword(command) if args.password else defaultPaassword
             )
-            key = encryption_helper.generate_key(
-                decryptionPassword, fileName, load_existing_salt=True
-            )
-            encryption_helper.decrypt(fileName, key)
-
+            encryptionHelper.decrypt(decryptionPassword, fileName)
     # Handle the case where the specified file does not exist
-    except FileNotFoundError:
-        logger.error(f"The file '{args.file}' does not exist.")
+    except (
+        EncryptionException.FileNotFound,
+        FileNotFoundError,
+    ) as errorMessage:
+        logger.error(errorMessage)
+    except EncryptionException.IncorrectPassword as errorMessage:
+        logger.error(errorMessage)
+    except KeyboardInterrupt:
+        logger.critical("Encryption operation cancelled by user.")
+    finally:
+        db.close()
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
