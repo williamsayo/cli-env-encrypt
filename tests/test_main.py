@@ -1,103 +1,137 @@
-import os
+import uuid
+from pathlib import Path
+import tempfile
 import unittest
-from encryptionHelper import EncryptionHelper
+from unittest.mock import MagicMock, patch
+from encryptionHelper import EncryptionHelper, EncryptionException
+
 
 class TestEnvVarsEncryption(unittest.TestCase):
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls) -> None:
+        pass
+
+    def setUp(self) -> None:
         """Set up test variables."""
-        with open(".env", "w") as file:
-            file.write("TEST_ENV_VAR=testing123\nANOTHER_ENV_VAR=hello_world")
+        self.filename = self.create_temp_file(
+            b"TEST_ENV_VAR=testing123\nANOTHER_ENV_VAR=hello_world"
+        )
+        self.mock_salt_store = MagicMock()
+        self.mock_logger = MagicMock()
         self.password = "strongpassword"
-        self.filename = ".env"
-        self.encryptedFileName = ".env.encrypted"
-        self.envEncryption = EncryptionHelper()
+        self.encryptedFileName = f"{self.filename}.encrypted"
+        self.envEncryption = EncryptionHelper(self.mock_salt_store, self.mock_logger)
 
-    def tearDown(self):
-        # delete test salt file from file
-        saltFileName = f'{self.filename}.salt'
-        if os.path.exists(saltFileName):
-            os.remove(saltFileName)
-
+    def tearDown(self) -> None:
         # delete test encrypted file from file
-        encryptedFileName = f"{self.filename}.encrypted"
-        if os.path.exists(encryptedFileName):
-            os.remove(encryptedFileName)
+        if Path.exists(Path(self.filename)):
+            Path.unlink(Path(self.filename))
+
+        if Path.exists(Path(self.encryptedFileName)):
+            Path.unlink(Path(self.encryptedFileName))
+
+    def create_temp_file(self, content: bytes) -> str:
+        temp = tempfile.NamedTemporaryFile(delete=False)
+        temp.write(content)
+        temp.close()
+        return temp.name
 
     @classmethod
-    def tearDownClass(cls):
-        # delete test salt file from file
-        fileName = f'.env'
-        if os.path.exists(fileName):
-            os.remove(fileName)
+    def tearDownClass(cls) -> None:
+        pass
 
-    def test_is_instance(self):
+    def test_is_instance(self) -> None:
         """Test class instance."""
         self.assertTrue(isinstance(self.envEncryption, EncryptionHelper))
 
-    def test_generate_key_method(self):
+    def test_generate_key_method(self) -> None:
         """Test generate key is instance method and is callable."""
-        self.assertTrue(callable(self.envEncryption.generate_key))
+        self.assertTrue(callable(self.envEncryption.generateKey))
 
-    def test_encrypt_method(self):
+    def test_encrypt_method(self) -> None:
         """Test encrypt is instance method."""
         self.assertTrue(callable(self.envEncryption.encrypt))
 
-    def test_decrypt_method(self):
+    def test_decrypt_method(self) -> None:
         """Test decrypt is instance method."""
         self.assertTrue(callable(self.envEncryption.decrypt))
 
-    def test_salt_file_not_found(self):
-        """Test decrypt file not Found"""
+    def test_file_not_found(self) -> None:
+        """Test decrypt/encrypt file not Found"""
         invalidFileName = ".notExist"
         self.assertRaises(
-            FileNotFoundError,
-            self.envEncryption.generate_key,
+            EncryptionException.FileNotFound,
+            self.envEncryption.generateKey,
             self.password,
             invalidFileName,
             load_existing_salt=True,
         )
 
-    def test_generate_key(self):
+    def test_generate_key_return_type(self) -> None:
         """Test generate key method."""
-        key = self.envEncryption.generate_key(
+        key, metadata = self.envEncryption.generateKey(
             self.password, self.filename, save_salt=True
         )
-        self.assertEqual(type(key), bytes)
+        self.assertIsInstance(key, bytes)
+        self.assertIsInstance(metadata, bytes)
 
-    def test_encrypt(self):
+    def test_generate_key_creates_new_salt(self) -> None:
+        """Test generate key creates new salt."""
+
+        key, _ = self.envEncryption.generateKey(
+            self.password,
+            self.filename,
+            save_salt=True,
+        )
+
+        self.assertIsInstance(key, bytes)
+        self.mock_salt_store.save_salt.assert_called_once()
+
+    def test_generate_key_uses_existing_salt(self) -> None:
+        existing_salt = (b"existing-salt", "timestamp")
+        self.mock_salt_store.get_salt.return_value = existing_salt
+
+        with patch.object(EncryptionHelper, "readMetadata", return_value = uuid.uuid4()):
+            key, _ = self.envEncryption.generateKey(
+                self.password, self.encryptedFileName, load_existing_salt=True
+            )
+
+            self.assertIsInstance(key, bytes)
+            self.mock_salt_store.save_salt.assert_not_called()
+
+    def test_encrypt(self) -> None:
         """Test encrypt method."""
-        key = self.envEncryption.generate_key(
-            self.password, self.filename, save_salt=True
-        )
-        encrypted = self.envEncryption.encrypt(self.filename, key)
+        encrypted = self.envEncryption.encrypt(self.password, self.filename)
         self.assertEqual(encrypted, "File encrypted successfully...")
 
-    def test_decrypt_file_with_wrong_password(self):
+    def test_decrypt_file_with_wrong_password(self) -> None:
+        existing_salt = (b"existing-salt", "timestamp")
+        self.mock_salt_store.get_salt.return_value = existing_salt
+
         """Test decrypt file with wrong password"""
-        key = self.envEncryption.generate_key(
-            self.password, self.filename, save_salt=True
-        )
-        encrypted = self.envEncryption.encrypt(self.filename, key)
+        encrypted = self.envEncryption.encrypt(self.password, self.filename)
         self.assertEqual(encrypted, "File encrypted successfully...")
 
-        wrong_key = self.envEncryption.generate_key(
-            "wrongpassword", self.encryptedFileName, load_existing_salt=True
-        )
-        decrypted = self.envEncryption.decrypt(
+        self.assertRaises(
+            EncryptionException.IncorrectPassword,
+            self.envEncryption.decrypt,
+            "wrongpassword",
             self.encryptedFileName,
-            wrong_key,
         )
 
-        self.assertEqual(decrypted,'Invalid token, likely the password is incorrect.')
-
-    def test_decrypt(self):
+    def test_decrypt(self) -> None:
         """Test decrypt method."""
-        key = self.envEncryption.generate_key(
-            self.password, self.filename, save_salt=True
-        )
-        self.envEncryption.encrypt(self.filename, key)
-        decrypted = self.envEncryption.decrypt(self.encryptedFileName, key)
+
+        mock_salt = b"existing-salt"
+        mock_db_return = (mock_salt, "timestamp")
+        self.mock_salt_store.get_salt.return_value = mock_db_return
+
+        with patch.object(EncryptionHelper, "generateSalt", return_value=mock_salt):
+            self.envEncryption.encrypt(self.password, self.filename)
+
+        decrypted = self.envEncryption.decrypt(self.password, self.encryptedFileName)
         self.assertEqual(decrypted, "File decrypted successfully...")
+
 
 if __name__ == "__main__":
     unittest.main()
