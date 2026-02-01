@@ -1,9 +1,59 @@
 [project]
 name = "env-encryption"
 version = "0.1.0"
-description = "Add your description here"
+description = "A lightweight CLI tool for encrypting and decrypting environment files, using per-file salts and symmetric encryption to protect sensitive configuration values."
+author = "williams ayo"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cryptography>=46.0.4",
 ]
+
+[tool.ruff.rules]
+lint.extend-select = [
+'PYI042',
+'PYI052',
+'Q000',
+'Q001',
+'Q002',
+'A001',
+'A004',
+'A005',
+'COM812',
+'FIX002',
+'ISC001',
+'LOG001',
+'LOG002',
+'T201',
+'PTH',
+'ANN001',
+'ANN002',
+'ANN201',
+'ANN205',
+'ANN206',
+'ANN401',
+'S101',
+'S110',
+'S608',
+'RET502',
+'RET503',
+'BLE001',
+'TID252',
+'TD007',
+'TD006',
+'ARG',
+'N801',
+'N805',
+'N804',
+'E101',	# Indentation contains mixed spaces and tabs
+'W293' # Blank line contains whitespace
+]
+
+lint.extend-ignore = [
+'PIE790',
+'COM812',
+'N802' # Checks for functions names that do not follow the snake_case naming convention.
+]
+
+[tool.ty.rules]
+'possibly-missing-attribute' = 'ignore'
