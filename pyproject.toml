@@ -38,7 +38,6 @@ lint.extend-select = [
 'S608',
 'RET502',
 'RET503',
-'BLE001',
 'TID252',
 'TD007',
 'TD006',
@@ -52,6 +51,7 @@ lint.extend-select = [
 
 lint.extend-ignore = [
 'PIE790',
+'BLE001', # Do not catch blind exception: `Exception`
 'COM812',
 'N802' # Checks for functions names that do not follow the snake_case naming convention.
 ]
