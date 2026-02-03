@@ -83,10 +83,9 @@ class EncryptionHelper:
         A method to decrypt file.
     """
 
-    def __init__(self, db:DB, logger:EncryptionLogger,filename:str = '.env') -> None:
+    def __init__(self, db:DB, logger:EncryptionLogger) -> None:
         self.saltStore = db
         self.logger = logger
-        self.filePath = Path(filename)
 
     def createMetadata(self, salt: bytes) -> uuid.UUID:
         """
@@ -100,13 +99,13 @@ class EncryptionHelper:
 
         return fileKey
 
-    def readMetadata(self) -> uuid.UUID:
+    def readMetadata(self,filePath:Path) -> uuid.UUID:
         """
         A method to read metadata from the encrypted file.
         """
 
         try:
-            with self.filePath.open("rb") as file:
+            with filePath.open("rb") as file:
                 # Read the first line containing metadata
                 metadataBytes = file.readline().strip()
 
@@ -144,6 +143,7 @@ class EncryptionHelper:
     def generateKey(
         self,
         password: str,
+        filePath:Path,
         save_salt: bool = False,
         load_existing_salt: bool = False,
     ) -> Tuple[bytes, bytes]:
@@ -170,7 +170,7 @@ class EncryptionHelper:
         # check existing salt file
         if load_existing_salt:
             # load existing salt
-            metadata = self.readMetadata()
+            metadata = self.readMetadata(filePath)
             salt = self.loadSalt(metadata)
 
         if save_salt:
@@ -186,7 +186,7 @@ class EncryptionHelper:
         # encode it using Base 64 and return it
         return base64.urlsafe_b64encode(derived_key), metadata.bytes
 
-    def encrypt(self, encryptionPassword: str,) -> str:
+    def encrypt(self, encryptionPassword: str,filePath:Path) -> str:
         """
         A method to encrypt file.
 
@@ -204,24 +204,24 @@ class EncryptionHelper:
         """
 
         key, metadata = self.generateKey(
-            password=encryptionPassword, save_salt=True
+            password=encryptionPassword, filePath=filePath, save_salt=True
         )
-        fernet, fileData = EncryptionHelper.readFileAndCreateFernet(self.filePath,key)
+        fernet, fileData = EncryptionHelper.readFileAndCreateFernet(filePath, key)
 
         # encrypting file_data
         encryptedData = fernet.encrypt(fileData)
 
         # writing to a new file with the encrypted data
-        with self.filePath.with_name(f"{self.filePath.name}.encrypted").open("wb") as encryptedFile:
+        with filePath.with_name(f"{filePath.name}.encrypted").open("wb") as encryptedFile:
             encryptedFile.writelines([metadata, b"\n", encryptedData])
 
         # delete original file after encrypting file
-        Path.unlink(self.filePath)
+        Path.unlink(filePath)
 
         self.logger.log_info("File encrypted successfully...")
         return "File encrypted successfully..."
 
-    def decrypt(self, decryptionPassword: str) -> str:
+    def decrypt(self, decryptionPassword: str, filePath:Path) -> str:
         """
         A method to decrypt file.
 
@@ -239,11 +239,11 @@ class EncryptionHelper:
         """
 
         key, _ = self.generateKey(
-            password=decryptionPassword, load_existing_salt=True
+            password=decryptionPassword, filePath=filePath, load_existing_salt=True
         )
 
         fernet, encryptedData = EncryptionHelper.readFileAndCreateFernet(
-            self.filePath, key, command="DECRYPT"
+            filePath, key, command="DECRYPT"
         )
 
         # decrypt data using the Fernet object
@@ -256,14 +256,15 @@ class EncryptionHelper:
             )
 
         # write the original file with decrypted content
-        with self.filePath.with_suffix("").open("wb") as file:
+        with filePath.with_suffix("").open("wb") as file:
             file.write(decryptedData)
-
+            
+        salt = self.readMetadata(filePath)
         # cleanup: delete salt from database
-        self.saltStore.delete_salt(self.readMetadata())
+        self.saltStore.delete_salt(salt)
 
         # delete decrypted file
-        Path.unlink(self.filePath)
+        Path.unlink(filePath)
 
         self.logger.log_info("File decrypted successfully...")
         return "File decrypted successfully..."
