@@ -1,4 +1,3 @@
-from ast import arg
 import sys
 import getpass
 import logging
@@ -93,7 +92,6 @@ Examples:
         action="store_true",
         help="To decrypt the file, only -d or --decrypt can be specified.",
     )
-    
     return parser
 
 def main() -> None:
@@ -116,7 +114,7 @@ def main() -> None:
                 f"The file '{args.file}' is empty."
             )
 
-        command: CommandType = "ENCRYPT" if args.encrypt else 'DECRYPT'
+        command: CommandType = "ENCRYPT" if args.encrypt else "DECRYPT"
         validateFile(filePath, command)
         password = getPassword(logger, command, passwordArg)
 
@@ -132,6 +130,7 @@ def main() -> None:
         EncryptionException.FileNotFound,
         FileNotFoundError,
         EncryptionException.IncorrectPassword,
+        EncryptionException.UnexpectedError
     ) as errorMessage:
         logger.error(errorMessage)
     except KeyboardInterrupt:
