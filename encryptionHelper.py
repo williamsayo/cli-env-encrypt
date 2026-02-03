@@ -1,8 +1,6 @@
-import logging
-from dataclasses import dataclass
 import base64
 import secrets
-from typing import Literal, Tuple, Protocol
+from typing import Literal, Tuple
 import uuid
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
@@ -50,6 +48,10 @@ class EncryptionException(BaseException):
                 else "Unsupported encryption version."
             )
             super().__init__(errorMessage)
+
+    class UnexpectedError(Exception):
+        def __init__(self):
+            super().__init__("An unexpected error occurred")
 
     class FileNotFound(Exception):
         def __init__(self, errorMessage:str = "Encryption/Decryption File not found."):
@@ -257,8 +259,7 @@ class EncryptionHelper:
 
         # write the original file with decrypted content
         with filePath.with_suffix("").open("wb") as file:
-            file.write(decryptedData)
-            
+            file.write(decryptedData)            
         salt = self.readMetadata(filePath)
         # cleanup: delete salt from database
         self.saltStore.delete_salt(salt)
