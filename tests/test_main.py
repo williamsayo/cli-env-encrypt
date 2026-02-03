@@ -19,7 +19,7 @@ class TestEnvVarsEncryption(unittest.TestCase):
         self.mock_salt_store = MagicMock()
         self.mock_logger = MagicMock()
         self.password = "strongpassword"
-        self.encryptedFileName = self.filePath.with_name(f'{self.filePath.name}.encrypted')
+        self.encryptedFileName = self.filePath.with_name(f"{self.filePath.name}.encrypted")
         self.envEncryption = EncryptionHelper(self.mock_salt_store, self.mock_logger)
 
     def tearDown(self) -> None:
