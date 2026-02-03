@@ -1,7 +1,6 @@
 from uuid import UUID
 import sqlite3
 from typing import Tuple
-from encryptionHelper import EncryptionException
 
 class DB:
     SCHEMA = """CREATE TABLE IF NOT EXISTS File_Salts (
@@ -22,6 +21,8 @@ class DB:
             self.cursor.execute(self.SCHEMA)
 
     def save_salt(self, key: UUID, salt: bytes) -> None:
+        from encryptionHelper import EncryptionException
+
         try:
             with self.connection:
                 self.cursor.execute(

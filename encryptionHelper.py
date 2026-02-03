@@ -5,7 +5,6 @@ import uuid
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 import cryptography
-from dbStore import DB
 from pathlib import Path
 from logging import Logger
 
@@ -66,6 +65,8 @@ class EncryptionException(BaseException):
     """Custom exception for EncryptionHelper errors."""
 
 class EncryptionHelper:
+    from dbStore import DB
+
     VERSION = "1.0"
     MAGIC = b"ENVENC"
     """
