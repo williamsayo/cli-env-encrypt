@@ -1,6 +1,8 @@
+import logging
+from dataclasses import dataclass
 import base64
 import secrets
-from typing import Literal,Tuple
+from typing import Literal, Tuple, Protocol
 import uuid
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
@@ -34,9 +36,12 @@ class EncryptionLogger:
         """Log an info message using the logger."""
         self.logger.info(message)
 
-
 class EncryptionException(BaseException):
     ...
+    class NoFileContent(Exception):
+        def __init__(self, errorMessage: str = "No File Content."):
+            super().__init__(errorMessage)
+
     class UnsupportedVersion(Exception):
         def __init__(self, version:str | None = None):
             errorMessage = (
@@ -78,9 +83,10 @@ class EncryptionHelper:
         A method to decrypt file.
     """
 
-    def __init__(self, saltStore: DB, encryptionLogger: EncryptionLogger) -> None:
-        self.saltStore = saltStore
-        self.logger = encryptionLogger
+    def __init__(self, db:DB, logger:EncryptionLogger,filename:str = '.env') -> None:
+        self.saltStore = db
+        self.logger = logger
+        self.filePath = Path(filename)
 
     def createMetadata(self, salt: bytes) -> uuid.UUID:
         """
@@ -94,13 +100,13 @@ class EncryptionHelper:
 
         return fileKey
 
-    def readMetadata(self, fileName: str) -> uuid.UUID:
+    def readMetadata(self) -> uuid.UUID:
         """
         A method to read metadata from the encrypted file.
         """
 
         try:
-            with Path(fileName).open("rb") as file:
+            with self.filePath.open("rb") as file:
                 # Read the first line containing metadata
                 metadataBytes = file.readline().strip()
 
@@ -138,7 +144,6 @@ class EncryptionHelper:
     def generateKey(
         self,
         password: str,
-        filename: str,
         save_salt: bool = False,
         load_existing_salt: bool = False,
     ) -> Tuple[bytes, bytes]:
@@ -165,7 +170,7 @@ class EncryptionHelper:
         # check existing salt file
         if load_existing_salt:
             # load existing salt
-            metadata = self.readMetadata(filename)
+            metadata = self.readMetadata()
             salt = self.loadSalt(metadata)
 
         if save_salt:
@@ -181,7 +186,7 @@ class EncryptionHelper:
         # encode it using Base 64 and return it
         return base64.urlsafe_b64encode(derived_key), metadata.bytes
 
-    def encrypt(self, encryptionPassword: str, filename: str) -> str:
+    def encrypt(self, encryptionPassword: str,) -> str:
         """
         A method to encrypt file.
 
@@ -199,24 +204,24 @@ class EncryptionHelper:
         """
 
         key, metadata = self.generateKey(
-            password=encryptionPassword, filename=filename, save_salt=True
+            password=encryptionPassword, save_salt=True
         )
-        fernet, fileData = EncryptionHelper.readFileAndCreateFernet(filename, key)
+        fernet, fileData = EncryptionHelper.readFileAndCreateFernet(self.filePath,key)
 
         # encrypting file_data
         encryptedData = fernet.encrypt(fileData)
 
         # writing to a new file with the encrypted data
-        with Path(f"{filename}.encrypted").open("wb") as encryptedFile:
+        with self.filePath.with_name(f"{self.filePath.name}.encrypted").open("wb") as encryptedFile:
             encryptedFile.writelines([metadata, b"\n", encryptedData])
 
         # delete original file after encrypting file
-        Path.unlink(Path(filename))
+        Path.unlink(self.filePath)
 
         self.logger.log_info("File encrypted successfully...")
         return "File encrypted successfully..."
 
-    def decrypt(self, decryptionPassword: str, filename: str) -> str:
+    def decrypt(self, decryptionPassword: str) -> str:
         """
         A method to decrypt file.
 
@@ -234,11 +239,11 @@ class EncryptionHelper:
         """
 
         key, _ = self.generateKey(
-            password=decryptionPassword, filename=filename, load_existing_salt=True
+            password=decryptionPassword, load_existing_salt=True
         )
 
         fernet, encryptedData = EncryptionHelper.readFileAndCreateFernet(
-            filename, key, command="DECRYPT"
+            self.filePath, key, command="DECRYPT"
         )
 
         # decrypt data using the Fernet object
@@ -251,14 +256,14 @@ class EncryptionHelper:
             )
 
         # write the original file with decrypted content
-        with Path(filename.replace(".encrypted", "")).open("wb") as file:
+        with self.filePath.with_suffix("").open("wb") as file:
             file.write(decryptedData)
 
         # cleanup: delete salt from database
-        self.saltStore.delete_salt(self.readMetadata(filename))
+        self.saltStore.delete_salt(self.readMetadata())
 
         # delete decrypted file
-        Path.unlink(Path(filename))
+        Path.unlink(self.filePath)
 
         self.logger.log_info("File decrypted successfully...")
         return "File decrypted successfully..."
@@ -305,7 +310,7 @@ class EncryptionHelper:
 
     @staticmethod
     def readFileAndCreateFernet(
-        filename: str,
+        filePath: Path,
         key: bytes,
         command: Literal["ENCRYPT", "DECRYPT"] = "ENCRYPT",
     ) -> tuple[Fernet, bytes]:
@@ -328,7 +333,7 @@ class EncryptionHelper:
         fernet = Fernet(key)
 
         try:
-            with Path(filename).open("rb") as file:
+            with filePath.open("rb") as file:
                 if command == "DECRYPT":
                     # skip metadata line for decryption
                     file.readline()
