@@ -1,3 +1,4 @@
+from ast import arg
 import sys
 import getpass
 import logging
@@ -17,9 +18,8 @@ def createLogger() -> logging.Logger:
     return logging.getLogger(__name__)
 
 def getPassword(logger:logging.Logger,command: CommandType,passwordArg:bool) -> str:
-    defaultPassword = "default_password_123"  # Replace with a secure default password or method to retrieve it
     if not passwordArg:
-        password = defaultPassword
+        password = "default_password_123"
     elif passwordArg and command == "ENCRYPT":
         while True:
             password = getpass.getpass("Enter the password for encrypting: ")
@@ -36,15 +36,15 @@ def getPassword(logger:logging.Logger,command: CommandType,passwordArg:bool) -> 
                     "Passwords do not match. Please try again."
                 )
                 continue
-    
+
             break
     else:
         password = getpass.getpass("Enter the password for decrypting: ")
 
     return password
 
-def validateFile(fileName: str, command: CommandType) -> None:
-    fileExtension = Path(fileName).suffix
+def validateFile(filePath: Path, command: CommandType) -> None:
+    fileExtension = filePath.suffix
     if command == "ENCRYPT" and fileExtension == ".encrypted":
         raise FileNotFoundError("File already encrypted.")
     elif command == "DECRYPT" and fileExtension != ".encrypted":
@@ -101,13 +101,13 @@ def main() -> None:
 
     logger = createLogger()
     args: Namespace = createParser().parse_args()
-    fileName: str = args.file
-    passwordArg = args.password
     db = DB()
-    encryptionHelper = EncryptionHelper(db, EncryptionLogger(logger), fileName)
+    encryptionHelper = EncryptionHelper(db, EncryptionLogger(logger))
+    filePath = Path(args.file)
+    passwordArg = args.password
 
     try:
-        with Path(fileName).open("rb") as envFile:
+        with filePath.open("rb") as envFile:
             envFileContent = envFile.read()
 
         # Check if the file is empty
@@ -116,19 +116,17 @@ def main() -> None:
                 f"The file '{args.file}' is empty."
             )
 
+        command: CommandType = "ENCRYPT" if args.encrypt else 'DECRYPT'
+        validateFile(filePath, command)
+        password = getPassword(logger, command, passwordArg)
+
         # Perform encryption based on the provided arguments
         if args.encrypt:
-            command: CommandType = "ENCRYPT"
-            validateFile(fileName, command)
-            encryptionPassword = getPassword(logger,command, passwordArg)
-            encryptionHelper.encrypt(encryptionPassword)
+            encryptionHelper.encrypt(password, filePath)
 
         # Perform decryption based on the provided arguments
         elif args.decrypt:
-            command = "DECRYPT"
-            validateFile(fileName, command)
-            decryptionPassword = getPassword(logger,command, passwordArg)
-            encryptionHelper.decrypt(decryptionPassword)
+            encryptionHelper.decrypt(password, filePath)
     # Handle the case where the specified file does not exist
     except (
         EncryptionException.FileNotFound,
