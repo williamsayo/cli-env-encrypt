@@ -10,7 +10,7 @@ jobs:
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v7
       - name: install project dependencies
-        run: uv sync
+        run: uv sync --dev
       - name: Type check all files
         run: uv run ty check .
       - name: Lint check all files
